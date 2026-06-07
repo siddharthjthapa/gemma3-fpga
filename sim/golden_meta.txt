@@ -1,0 +1,2 @@
+pos0_token=2 pos0_argmax=2
+pos1_token=386 pos1_argmax=380

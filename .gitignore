@@ -1,0 +1,29 @@
+# Generated artifacts (regenerate with the scripts)
+sim/model_il.hex
+soc/model.bin
+
+# Vivado / Vitis build trees and logs
+**/ws/
+**/build/
+**/.Xil/
+*.jou
+*.log
+*.backup.log
+*.backup.jou
+*.str
+*.pb
+*.rpt
+*.out
+xsim.dir/
+vivado.jou
+vivado.log
+
+# Compiled host tools
+*.exe
+*.o
+*.d
+
+# Editor / OS cruft
+.DS_Store
+Thumbs.db
+*.swp
