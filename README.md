@@ -1,9 +1,12 @@
 # Gemma3 in FPGA fabric
 
-A full **fp16 Gemma3 transformer forward pass written in SystemVerilog RTL**,
-synthesized and running on the programmable logic of a Xilinx Zynq-7010 (Z-turn
-Lite board). The ARM Cortex-A9 (PS) only feeds tokens, samples (greedy argmax),
-and prints over UART; every layer of the model (Gemma RMSNorm, per-head QK-norm,
+A **600K-class, scaled-down Gemma3-style transformer** whose **entire forward pass
+runs in fp16 SystemVerilog RTL** on the programmable logic of a Xilinx Zynq-7010
+(Z-turn Lite board). This is not the full Gemma3 model; it is a small from-scratch
+model with Gemma3 architecture conventions (see the training section below).
+The ARM Cortex-A9 (PS) only feeds tokens,
+samples (greedy argmax), and prints over UART, while every layer of the model
+(Gemma RMSNorm, per-head QK-norm,
 split-half RoPE, grouped-query sliding-window attention with an on-chip fp16 KV
 cache, the GELU-gated FFN, the post-sublayer norms, and the tied classifier)
 executes in the FPGA at 100 MHz.
