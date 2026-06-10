@@ -72,46 +72,6 @@ step 2500/2500  train_loss=0.3678  val_loss=0.3722
 ```
 
 
-## Differences from the llama2 build
-
-
-### Model architecture (Gemma3 vs llama2)
-
-| aspect | llama2-260K | Gemma3-600K |
-|---|---|---|
-| dimensions | dim 64, hidden 172, 5 layers | dim 80, hidden 240, 7 layers |
-| heads | 8 query / 4 KV (head_size 8) | 4 query / 1 KV (head_dim 20), GQA group of 4 |
-| RMSNorm | `out = w * (ss * x)`, eps 1e-5 | Gemma form `out = x * ss * (1 + w)`, eps 1e-6 |
-| QK norm | none | per-head RMSNorm on q and k before RoPE |
-| RoPE | interleaved pairs `(x[2i], x[2i+1])` | split-half `(x[i], x[i+half])` (NeoX style), theta 10000 |
-| attention | full causal | sliding window of 64 positions |
-| FFN | SwiGLU (SiLU gate) | GeGLU (GELU-tanh gate) |
-| sublayer norms | pre-norm only | pre-norm plus a post-attention and a post-FFN RMSNorm before each residual add |
-| embedding | used as-is | scaled by sqrt(dim) |
-| classifier | tied to the embedding table | tied to the embedding table (same) |
-| weights | fp32 | fp16 |
-
-### Hardware implementation (this core vs the fp32 llama core)
-
-| aspect | llama_pl (fp32) | gemma_pl (fp16) |
-|---|---|---|
-| arithmetic | `fp32_mul_p / fp32_add_p / fp32_exp_p / fp32_rsqrt_p`, fp32 `pmac` | `fp16_*` equivalents, fp16 `pmac16` (8 round-robin fp16 accumulators plus a tree reduce) |
-| weight beat | 64-bit AXI beat carries 2 fp32 | 64-bit AXI beat carries 4 fp16 |
-| matmul lanes | 2-lane row-interleaved (2 output rows per beat) | 4-lane row-interleaved (4 output rows per beat) |
-| KV cache | fp32 | fp16 (half the BRAM); per-entry stride padded to a power of 2 so the cache address is a shift, not a DSP multiply |
-| nonlinearities | exp plus rsqrt; SiLU via reciprocal | exp plus rsqrt; GELU computed as `x / (1 + e^(-2z))` so no tanh unit and no divide unit are needed (every reciprocal is `rsqrt(d)^2`) |
-| RoPE tables | streamed from DDR | streamed from DDR, with the per-position stride padded to a multiple of 4 so each read lands on an 8-byte AXI boundary (see note below) |
-| timing | fp32 paths registered to close 100 MHz | act-RAM reads registered and KV writes registered to close 100 MHz in fp16 |
-| resources | about 10.9K LUT, 15 DSP, 33 BRAM | about 7.8K LUT, 14 DSP, 32.5 BRAM |
-
-A subtle hardware-only bug worth recording: the real PS7 HP port aligns an AXI read
-address down to the transfer-size (8-byte) boundary. The RoPE table originally had
-a stride of 10 (`head_dim/2`), so odd positions produced a 4-byte-aligned address
-that the hardware silently shifted, corrupting the rotation on every other token.
-An idealized DDR model does not show this. The fix pads the RoPE table stride to a
-multiple of 4, and `rtl/ddr_model16_rl.sv` now models the alignment behaviour (plus
-AR/R latency and rvalid gaps) so simulation matches the board.
-
 ## Repository layout
 
 ```
