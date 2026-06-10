@@ -72,6 +72,41 @@ step 2500/2500  train_loss=0.3678  val_loss=0.3722
 ```
 
 
+### Model architecture
+
+| aspect | Gemma3-600K |
+|---|---|
+| dimensions | dim 80, hidden 240, 7 layers |
+| heads | 4 query / 1 KV, head_dim 20, GQA group of 4 |
+| RMSNorm | Gemma form `out = x * ss * (1 + w)`, eps 1e-6 |
+| QK norm | per-head RMSNorm on q and k before RoPE |
+| RoPE | split-half `(x[i], x[i+half])` NeoX style, theta 10000 |
+| attention | sliding window of 64 positions |
+| FFN | GeGLU with GELU-tanh gate |
+| sublayer norms | pre-norm plus post-attention and post-FFN RMSNorm before each residual add |
+| embedding | scaled by sqrt(dim) |
+| classifier | tied to the embedding table |
+| weights | fp16 |
+
+### Hardware implementation
+
+| aspect | gemma_pl fp16 core |
+|---|---|
+| arithmetic | `fp16_*` operators, fp16 `pmac16` with 8 round-robin fp16 accumulators plus a tree reduce |
+| weight beat | 64-bit AXI beat carries 4 fp16 values |
+| matmul lanes | 4-lane row-interleaved, producing 4 output rows per beat |
+| KV cache | fp16, using half the BRAM of fp32; per-entry stride is padded to a power of 2 so the cache address is a shift instead of a DSP multiply |
+| nonlinearities | exp plus rsqrt; GELU computed as `x / (1 + e^(-2z))`, avoiding both a tanh unit and a divide unit. Reciprocals are implemented as `rsqrt(d)^2` |
+| RoPE tables | streamed from DDR, with the per-position stride padded to a multiple of 4 so each read lands on an 8-byte AXI boundary |
+| timing | act-RAM reads and KV writes are registered to close timing at 100 MHz |
+| resources | about 7.8K LUT, 14 DSP, 32.5 BRAM |
+
+A subtle hardware-only bug worth recording: the real PS7 HP port aligns an AXI read address down to the transfer-size, 8-byte boundary. The RoPE table originally had a stride of 10, equal to `head_dim/2`, so odd positions produced a 4-byte-aligned address that the hardware silently shifted, corrupting the rotation on every other token.
+
+An idealized DDR model does not show this. The fix pads the RoPE table stride to a multiple of 4, and `rtl/ddr_model16_rl.sv` now models the alignment behaviour, AR/R latency, and `rvalid` gaps so simulation matches the board.
+
+
+
 ## Repository layout
 
 ```
